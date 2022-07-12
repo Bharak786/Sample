@@ -1,0 +1,68 @@
+pipeline {
+    agent any
+
+    tools {
+        maven "maven"
+        jdk   "java11"
+    }
+    environment {
+
+      sonar_url = 'http://172.31.24.182:9000'
+      sonar_username = 'admin'
+      sonar_password = 'admin'
+      nexus_url = '172.31.24.182:8081'
+      artifact_version = '5.0.0'
+
+ }
+    parameters{
+        string(
+        name: 'branch',
+        defaultValue: 'master',
+        description: 'please select any branch to build')
+    }
+
+    stages {
+        stage('git checout') {
+            steps {
+                git branch: '${branch}',
+                url: 'https://github.com/Bharak786/project.git'
+                }
+            }
+        stage('maven build') {
+            steps {
+                sh 'mvn clean install'
+    }
+        }
+        stage ('Sonarqube Analysis'){
+           steps {
+           withSonarQubeEnv('sonarqube') {
+           sh '''
+           mvn -e -B sonar:sonar -Dsonar.java.source=1.8 -Dsonar.host.url="${sonar_url}" -Dsonar.login="${sonar_username}" -Dsonar.password="${sonar_password}" -Dsonar.sourceEncoding=UTF-8
+           '''
+           }
+           }
+        }
+        stage ('Publish Artifact') {
+        steps {
+          nexusArtifactUploader artifacts: [[artifactId: 'hello-world-war', classifier: '', file: "target/hello-world-war-1.0.0.war", type: 'war']], credentialsId: 'nexus-cred', groupId: 'com.efsavage', nexusUrl: "${nexus_url}", nexusVersion: 'nexus3', protocol: 'http', repository: 'release', version: "${artifact_version}"
+        }
+      }
+      stage('Building image') {
+       steps{
+         script {
+           dockerImage = docker.build "bharak786/demo:GOL"
+           }
+          }
+         }
+
+   stage('Docker publish') {
+    steps {
+    script {
+        withDockerRegistry(registry:[ credentialsId: 'registryCredential']) {
+         sh 'docker push bharak786/demo:GOL'
+         }
+        }
+      }
+     }
+}
+}
